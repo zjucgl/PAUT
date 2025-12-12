@@ -1,34 +1,43 @@
-import torchvision.models as models
+import os
 
-from code.PAUT.net import mbv2_ca
-from code.PAUT.net import MobileNetV3_Small, MobileNetV3_Large
-from code.PAUT.net import InceptionV4
-from code.PAUT.net import resnet152_slice
-from code.PAUT.net.ResNet_att import resnet152_att, resnet50_att, resnet18_att
-from code.PAUT.net import eca_resnet152
-from code.PAUT.net import Fuse_model
-from code.PAUT.net import Fuse_PAUT
-from code.PAUT.net import resnet18_fpn
+import torchvision.models as models
+from typing import List, Optional
+from collections import OrderedDict
+import timm
+
+from net.DenseNet_my import *
+from net.MobileNetV2 import *
+from net.net import *
+from net.mbv2_ca import mbv2_ca
+from net.mobilenetv3 import MobileNetV3_Small, MobileNetV3_Large
+from net.inceptionv4 import InceptionV4
+from net.ResNet_slice import resnet152_slice
+from net.ResNet_att import resnet152_att, resnet50_att, resnet18_att
+from net.eca_resnet import eca_resnet152
+from net.DenseNet_att import *
+from net.Fuse_model import Fuse_model
+from net.Fuse_PAUT import Fuse_PAUT
+from net.ResNetFPN import resnet18_fpn
 
 import sys
 
 Local = sys.platform.startswith("win")
 
-# workspace_dir = 'E:/datasets/gydp/classification/datasets' if Local \
-#     else '/home/admin/datasets/gydp/classification/datasets'
-# cls = ['CR', 'LF', 'LP', 'ND', 'PO']
 CUDA_INDEX = 1
 
-ROOT = '/root/datadisk/hb/datasets'
+ROOT = '/root/datadisk/hb/datasets' if not Local else r'E:\datasets\PAUT'
 
-workspace_dir = r'E:\datasets\datasets' if Local \
-    else '/root/datadisk/hb/datasets/datasets-s-'
+workspace_dir = r'E:\datasets\Sketchy Database\datasets\photo' if Local \
+    else '/root/datadisk/hb/datasets/datasets-weld_ids/weld_'
 
-type_path = '/root/datadisk/hb/datasets/datasets-s-3'
-cls = os.listdir(os.path.join(type_path, 'testing')) if not Local else ['CR', 'LF', 'LP', 'ND']
+type_path = '/root/datadisk/hb/datasets/datasets-s-3' if not Local else r'E:\datasets\PAUT\datasets-s'
+cls = os.listdir(type_path)
 
 input_size = (224, 224)
 FORMER_SLICE = False
+
+selected_geo_indices = [0, 5]
+
 
 base_res_dir = 'E:/tmp/runs' if Local else f'/root/datadisk/hb/paut/runs'
 
@@ -38,10 +47,40 @@ dropout = 0.0
 def get_model_by_str(model_name, pretrained=False, pretrain_path='', freeze=False, att=None, drop_rate=0.):
     model = None
 
+    if model_name == 'eff':
+        model = timm.create_model(
+            'efficientnet_b0',
+            pretrained=False,  # 先设为False，后面手动加载
+            num_classes=0,
+            global_pool='avg',
+            drop_rate=0.2,
+            drop_path_rate=0.1
+        )
+
+
+        # 手动加载预训练权重
+        if pretrained:
+            print("load EfficientNet pre weight...")
+            model = load_dict(model)
+
+        model.classifier = nn.Sequential(
+            nn.Dropout(0.3),
+            nn.Linear(1280, 3)
+        )
+
+        for m in [model.classifier]:
+            for layer in m.modules():
+                if isinstance(layer, nn.Linear):
+                    nn.init.normal_(layer.weight, 0, 0.01)
+                    if layer.bias is not None:
+                        nn.init.constant_(layer.bias, 0)
+
     if model_name in ['resnet18', 'resnet50', 'resnet152', 'resnet152_slice', 'resnet152_att', 'eca_resnet152',
                       'resnet50_att', 'resnet18_att', 'resnet18_fuse', 'resnet18_paut', 'resnet18_fpn']:
         if model_name == 'resnet18':
-            model = models.resnet18(pretrained=pretrained)
+            model = models.resnet18()
+            if pretrained:
+                model.load_state_dict(torch.load('weights/resnet18_v1.pth'), strict=False)
         if model_name == 'resnet50':
             model = models.resnet50(pretrained=pretrained)
         if model_name == 'resnet152':
@@ -74,6 +113,9 @@ def get_model_by_str(model_name, pretrained=False, pretrain_path='', freeze=Fals
                 model.load_state_dict(torch.load('./weights/eca_resnet152.pth'))
         # 冻结模型的所有参数
         if freeze:
+            # for param in model.parameters():
+            #     param.requires_grad = False
+            # 冻结 conv1 和 layer1
             for name, param in model.named_parameters():
                 if name.startswith('conv1') or name.startswith('layer1'):
                     param.requires_grad = False
@@ -198,6 +240,36 @@ def get_model_by_str(model_name, pretrained=False, pretrain_path='', freeze=Fals
     print("================================================================")
     print(f"Total Parameters: {total_params}")
     print("================================================================")
+    return model
+
+
+def load_dict(model):
+    """加载预训练权重"""
+    weight_path = "weights/efficientnet_b0_ra.pth"
+
+    # 1. 加载文件
+    ckpt = torch.load(weight_path, map_location='cpu')
+
+    # 2. 取出 state_dict
+    if isinstance(ckpt, dict) and 'state_dict' in ckpt:
+        state_dict = ckpt['state_dict']
+    elif isinstance(ckpt, dict) and any(k.startswith('module.') for k in ckpt.keys()):
+        state_dict = ckpt
+    else:
+        state_dict = ckpt
+
+    # 3. 去掉 'module.' 前缀
+    new_state_dict = OrderedDict()
+    for k, v in state_dict.items():
+        new_k = k
+        if k.startswith('module.'):
+            new_k = k[len('module.'):]
+        new_state_dict[new_k] = v
+
+    # 4. 加载到模型
+    load_res = model.load_state_dict(new_state_dict, strict=False)
+    print("missing keys:", load_res.missing_keys)
+    print("unexpected keys:", load_res.unexpected_keys)
     return model
 
 

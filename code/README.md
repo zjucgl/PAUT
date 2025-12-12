@@ -1,7 +1,7 @@
-# A Misalignment-Robust PAUT Geometric Artifact Identification Model Integrating Weld Geometric Priors and Distance Descriptors
+# Geometry-Aware Pseudo-Defect Recognition in Phased Array Ultrasonic Testing via Continuous Distance Field Encoding
 
 This repository contains the official implementation of our paper:
-**"A Misalignment-Robust PAUT Geometric Artifact Identification Model Integrating Weld Geometric Priors and Distance Descriptors"** (Submitted to *Journal/Conference Name*).
+**"Geometry-Aware Pseudo-Defect Recognition in Phased Array Ultrasonic Testing via Continuous Distance Field Encoding"** (Submitted to *Structural Durability & Health Monitoring*).
 
 ---
 
@@ -45,16 +45,10 @@ Each folder contains four subfolders representing different classes:
 
 ```
 datasets/
- ├── datasets-raw-s/
- │    ├── defect/
- │    ├── geometry/
- │    ├── no/
- │    └── offset_geometry/
- ├── datasets-raw-s-weld/
- │    ├── defect/
- │    ├── geometry/
- │    ├── no/
- │    └── offset_geometry/
+├── nd/
+├── pd/
+└── td/
+
 ```
 
 Each subfolder contains `.png` format images for the corresponding class.
@@ -75,8 +69,8 @@ Additional common options (examples):
 # 使用预训练权重并指定输出目录
 python train.py --name exp1 --net resnet18 --pre
 
-# 指定训练超参数示例（如脚本支持）
-python train.py --name exp_lr --net resnet18 --pre --lr 0.01 --batch_size 32 --epochs 100
+# 指定训练超参数示例
+python train.py --name exp_lr --net new --pre --lr 0.01 --batch_size 32 --epochs 100 --datasets 1 --extra
 ```
 
 ---
